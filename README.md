@@ -7,9 +7,8 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 ### Strongly suggest running the [batchfile](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/download/v1.0/install-tools.bat) to install FFMPEG and yt-dlp automatically for easiest compatibility
 
 ---
-[Release v1.5.1](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.5.1)
-- More file-size estimate tweaks/tuning
-- Final update with file-size estimate, next update will be a streamlined version with no file-size estimate (too much of a headache to deal with since it estimates without downloading the raw file to be converted. Perhaps at some point I might put out a version where the program will download the raw file first to get a better estimate, but for now I'm going to move forward with versions that don't have this feature since its been too inaccurate depending on videos chosen and has caused me to spend way too much time trying to tune a rather unimportant feature. If discord optimized outputs, or even 480p/30CRF are still too large then there isn't much you can do without outright editing your desired video yourself for length)
+[Release v1.5.2](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.5.2)
+-Description text fixed/repositioned
 
 
 ![image](https://github.com/user-attachments/assets/837f25d7-5b16-4c98-a966-49adef701f8d)
