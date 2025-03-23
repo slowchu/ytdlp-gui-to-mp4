@@ -6,8 +6,8 @@ import threading
 import ctypes
 from tkinter import ttk
 import shutil
+import math
 
-# Use CREATE_NO_WINDOW flag for Windows
 CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 
 def get_windows_videos_folder():
@@ -15,10 +15,7 @@ def get_windows_videos_folder():
         FOLDERID_Videos = '{18989B1D-99B5-455B-841C-AB7C74E4DDFC}'
         SHGetKnownFolderPath = ctypes.windll.shell32.SHGetKnownFolderPath
         SHGetKnownFolderPath.argtypes = [
-            ctypes.c_char_p,
-            ctypes.c_uint32,
-            ctypes.c_void_p,
-            ctypes.POINTER(ctypes.c_wchar_p)
+            ctypes.c_char_p, ctypes.c_uint32, ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)
         ]
         path_ptr = ctypes.c_wchar_p()
         result = SHGetKnownFolderPath(FOLDERID_Videos.encode('utf-8'), 0, None, ctypes.byref(path_ptr))
@@ -26,7 +23,6 @@ def get_windows_videos_folder():
     except Exception:
         return None
 
-# Find ffmpeg
 FFMPEG_PATH = shutil.which("ffmpeg")
 if not FFMPEG_PATH:
     fallback_ffmpeg = r"C:\Program Files\VideoTools\ffmpeg.exe"
@@ -36,7 +32,6 @@ if not FFMPEG_PATH:
         messagebox.showerror("FFmpeg Not Found", "FFmpeg is not installed or not in PATH.")
         exit()
 
-# Find yt-dlp
 YT_DLP_PATH = shutil.which("yt-dlp")
 if not YT_DLP_PATH:
     fallback_ytdlp = r"C:\Program Files\VideoTools\yt-dlp.exe"
@@ -53,7 +48,6 @@ if not videos_dir:
 DOWNLOAD_DIR = os.path.join(videos_dir, "YT-DLP Downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-# Base bitrate assumptions (in kbps) for re-encoding at each resolution
 base_bitrate_dict = {
     "Original": 1500,
     "480p": 1000,
@@ -63,50 +57,6 @@ base_bitrate_dict = {
     "4K": 8000
 }
 reference_quality = 23
-
-
-
-
-
-
-
-
-
-
-
-
-
-def get_static_image_multiplier(crf):
-    crf = max(18, min(30, crf))
-    return 0.054 - ((crf - 18) / 12) * (0.054 - 0.028)
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Global fudge factor to boost the computed estimate.
-global_fudge = 1.9
-
-def get_crf_fudge_factor_exponential(crf):
-    """
-    Returns an exponential fudge factor so that:
-      - at CRF=30, factor ~ 1.0
-      - at CRF=18, factor ~ 2.0
-    (This function remains unchanged.)
-    """
-    min_crf, max_crf = 18, 30
-    crf = max(min_crf, min(crf, max_crf))
-    b = 2 ** (1/12)  # b^12 = 2
-    exponent = (max_crf - crf)
-    return b ** exponent
 
 def fetch_video_duration(url):
     try:
@@ -121,21 +71,6 @@ def fetch_video_duration(url):
     except Exception:
         return 0
 
-def fetch_filesize_approx(url):
-    try:
-        result = subprocess.run(
-            [YT_DLP_PATH, "--print", "%(filesize_approx)s", url],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            creationflags=CREATE_NO_WINDOW
-        )
-        fs_str = result.stdout.strip()
-        if fs_str and fs_str.lower() != "none":
-            return int(fs_str)
-    except Exception:
-        return None
-
 def update_estimated_size():
     url = url_entry.get().strip()
     if not url:
@@ -147,81 +82,26 @@ def update_estimated_size():
         estimated_label.config(text="Estimated Output Size: Unable to determine duration")
         return
 
-    # Fetch source filesize (in bytes)
-    source_size = fetch_filesize_approx(url)
-    if source_size:
-        source_size_MB = source_size / (1024 * 1024)
-    else:
-        source_size_MB = None
+    res = resolution_var.get() if not discord_var.get() else "720p"
+    base_bitrate = base_bitrate_dict.get(res, 1500)
+    crf = 28 if discord_var.get() else quality_var.get()
 
-    def blend_estimate(computed_est, computed_total_bitrate_kbps):
-        """
-        Blends the computed estimate with the source filesize estimate.
-        Weight = (source_avg_bitrate / computed_total_bitrate), clamped between 0.3 and 1.0.
-        """
-        if not source_size_MB or duration <= 0:
-            return computed_est
+    multiplier = reference_quality / crf
+    fudge_scaling = 0.028
+    fudge = 1 - ((crf - 18) / 12) * fudge_scaling
+    fudge = max(0.7, min(fudge, 1.0))
 
-        source_avg_bitrate = (source_size * 8) / (duration * 1000)  # in kbps
-        weight = source_avg_bitrate / computed_total_bitrate_kbps
-        weight = max(0.3, min(1.0, weight))
-        return weight * computed_est + (1 - weight) * source_size_MB
+    estimated_video_bitrate = base_bitrate * multiplier * fudge
+    audio_bitrate = 96 if discord_var.get() else 128
+    total_bitrate = estimated_video_bitrate + audio_bitrate
 
-    if discord_var.get():
-        # Discord Optimized: fixed settings (720p, CRF 28, 96k audio)
-        res = "720p"
-        base_bitrate = base_bitrate_dict.get(res, 1500)
-        crf_val = 28
-        multiplier = reference_quality / crf_val
-        fudge_factor = get_crf_fudge_factor_exponential(crf_val)
-        computed_video_bitrate = base_bitrate * multiplier * fudge_factor
-        total_bitrate = computed_video_bitrate + 96  # kbps
-        computed_estimated_size = (duration * total_bitrate) / 8000.0  # MB
+    if static_var.get():
+        total_bitrate *= 0.65
 
-        # Apply global fudge factor
-        computed_estimated_size *= global_fudge
-
-        
-        if static_image_var.get():
-            computed_estimated_size *= get_static_image_multiplier(crf_val)
-
-        lower_bound = computed_estimated_size * 0.50
-        upper_bound = computed_estimated_size * 0.75
-
-        final_lower = blend_estimate(lower_bound, total_bitrate)
-        final_upper = blend_estimate(upper_bound, total_bitrate)
-
-        estimated_label.config(
-            text=f"Estimated Output Size: {final_lower:.1f} MB - {final_upper:.1f} MB (Discord Optimized)"
-        )
-    else:
-        # Non-Discord mode
-        res = resolution_var.get()
-        base_bitrate = base_bitrate_dict.get(res, 1500)
-        crf_val = quality_var.get()
-        multiplier = reference_quality / crf_val
-        fudge_factor = get_crf_fudge_factor_exponential(crf_val)
-
-        computed_video_bitrate = base_bitrate * multiplier * fudge_factor
-        total_bitrate = computed_video_bitrate + 128  # kbps
-        computed_estimated_size = (duration * total_bitrate) / 8000.0  # MB
-
-        # Apply global fudge factor
-        computed_estimated_size *= global_fudge
-
-        
-        if static_image_var.get():
-            computed_estimated_size *= get_static_image_multiplier(crf_val)
-
-        lower_bound = computed_estimated_size * 0.50
-        upper_bound = computed_estimated_size * 0.75
-
-        final_lower = blend_estimate(lower_bound, total_bitrate)
-        final_upper = blend_estimate(upper_bound, total_bitrate)
-
-        estimated_label.config(
-            text=f"Estimated Output Size: {final_lower:.1f} MB - {final_upper:.1f} MB"
-        )
+    size_mb = (duration * total_bitrate) / 8000.0
+    low = size_mb * 0.95
+    high = size_mb * 1.25
+    estimated_label.config(text=f"Estimated Output Size: {low:.1f} MB - {high:.1f} MB")
 
 def start_estimation_thread():
     threading.Thread(target=update_estimated_size, daemon=True).start()
@@ -230,8 +110,10 @@ def download_and_convert(url, filename):
     try:
         status_label.config(text="Downloading Video...")
         progress_bar.start()
+
         raw_path = os.path.join(DOWNLOAD_DIR, f"{filename}_raw.webm")
         final_path = os.path.join(DOWNLOAD_DIR, f"{filename}.mp4")
+
         ytdlp_cmd = [
             YT_DLP_PATH,
             "-f", "bv*[ext=webm]+ba[ext=webm]/best",
@@ -239,48 +121,36 @@ def download_and_convert(url, filename):
             url
         ]
         subprocess.run(ytdlp_cmd, check=True, creationflags=CREATE_NO_WINDOW)
+
         status_label.config(text="Converting Video...")
-        res = resolution_var.get()
-        if discord_var.get():
-            res = "720p"  # Force 720p for Discord
-
+        res = resolution_var.get() if not discord_var.get() else "720p"
         if res == "Original":
-            scale_filter = "scale=iw:-2:flags=lanczos"
+            scale_filter = "scale=iw:ih:flags=lanczos"
         elif res == "4K":
-            scale_filter = "scale=3840:-2:flags=lanczos"
+            scale_filter = "scale=3840:2160:flags=lanczos"
         else:
-            numeric = res.replace("p", "")
-            scale_filter = f"scale={numeric}:-2:flags=lanczos"
+            width = int(int(res.replace("p", "")) * 16 / 9)
+            height = int(res.replace("p", ""))
+            scale_filter = f"scale={width}:{height}:flags=lanczos"
 
-        if discord_var.get():
-            crf_value = "28"
-            ffmpeg_cmd = [
-                FFMPEG_PATH,
-                "-i", raw_path,
-                "-c:v", "libx264",
-                "-crf", crf_value,
-                "-preset", "slow",
-                "-vf", scale_filter,
-                "-c:a", "aac",
-                "-b:a", "96k",
-                final_path
-            ]
-        else:
-            crf_value = str(quality_var.get())
-            ffmpeg_cmd = [
-                FFMPEG_PATH,
-                "-i", raw_path,
-                "-c:v", "libx264",
-                "-crf", crf_value,
-                "-preset", "slow",
-                "-vf", scale_filter,
-                "-c:a", "aac",
-                "-b:a", "128k",
-                final_path
-            ]
+        crf_value = "28" if discord_var.get() else str(quality_var.get())
+        audio_bitrate = "96k" if discord_var.get() else "128k"
+        ffmpeg_cmd = [
+            FFMPEG_PATH,
+            "-i", raw_path,
+            "-c:v", "libx264",
+            "-crf", crf_value,
+            "-preset", "slow",
+            "-vf", scale_filter,
+            "-c:a", "aac",
+            "-b:a", audio_bitrate,
+            final_path
+        ]
         subprocess.run(ffmpeg_cmd, check=True, creationflags=CREATE_NO_WINDOW)
+
         if os.path.exists(raw_path):
             os.remove(raw_path)
+
         status_label.config(text="Done")
         messagebox.showinfo("Success", f"Saved to:\n{final_path}")
     except subprocess.CalledProcessError as e:
@@ -317,11 +187,8 @@ def on_discord_toggle(*args):
 def update_quality_label(val=None):
     quality_value_label.config(text=f"{quality_var.get():.0f}")
 
-# === GUI ===
 root = tk.Tk()
 root.title("Video Downloader & Converter")
-screen_width = root.winfo_screenwidth()
-screen_height = root.winfo_screenheight()
 root.resizable(False, False)
 
 tk.Label(root, text="Video Platform URL:").pack(pady=(10, 0))
@@ -339,9 +206,6 @@ resolution_var.set("720p")
 resolution_menu = tk.OptionMenu(root, resolution_var, *resolution_options, command=lambda _: start_estimation_thread())
 resolution_menu.pack(pady=(0, 10))
 
-static_image_var = tk.BooleanVar()
-tk.Checkbutton(root, text="Static Image (e.g. music with no motion)", variable=static_image_var).pack(pady=(0, 10))
-
 tk.Button(root, text="Estimate File Size", command=start_estimation_thread).pack(pady=(0, 5))
 estimated_label = tk.Label(root, text="Estimated Output Size: N/A")
 estimated_label.pack(pady=(0, 10))
@@ -350,22 +214,22 @@ tk.Label(root, text="Video Quality (Lower value = higher quality):").pack()
 slider_frame = tk.Frame(root)
 slider_frame.pack(fill="x", padx=10)
 tk.Label(slider_frame, text="Low (Smaller File)").pack(side="left", padx=(15, 5))
+
 quality_var = tk.DoubleVar(value=23)
-quality_slider = ttk.Scale(slider_frame, from_=30, to=18, orient=tk.HORIZONTAL,
-                           variable=quality_var, command=update_quality_label)
+quality_slider = ttk.Scale(slider_frame, from_=30, to=18, orient=tk.HORIZONTAL, variable=quality_var, command=update_quality_label)
 quality_slider.pack(side="left", fill="x", expand=True, padx=10)
 quality_value_label = tk.Label(slider_frame, text=f"{quality_var.get():.0f}")
 quality_value_label.pack(side="left", padx=(5, 15))
 tk.Label(slider_frame, text="(Higher value = Larger File)").pack(side="left")
 
 discord_var = tk.BooleanVar()
-discord_checkbox = tk.Checkbutton(
-    root,
-    text="Discord Optimized (CRF 28, 720p max, 96k audio)",
-    variable=discord_var
-)
-discord_checkbox.pack(pady=(5, 10))
+discord_checkbox = tk.Checkbutton(root, text="Discord Optimized (CRF 28, 720p max, 96k audio)", variable=discord_var)
+discord_checkbox.pack(pady=(5, 2))
 discord_var.trace("w", on_discord_toggle)
+
+static_var = tk.BooleanVar()
+static_checkbox = tk.Checkbutton(root, text="Static Image (Less Motion)", variable=static_var, command=start_estimation_thread)
+static_checkbox.pack(pady=(0, 10))
 
 tk.Button(root, text="Download & Convert", command=start_download).pack(pady=5)
 progress_bar = ttk.Progressbar(root, mode='indeterminate', length=350)
@@ -373,10 +237,4 @@ progress_bar.pack(pady=(5, 0))
 status_label = tk.Label(root, text="Idle")
 status_label.pack(pady=(5, 10))
 
-root.update_idletasks()
-window_width = 500
-window_height = root.winfo_reqheight()
-x_position = (screen_width - window_width) // 2
-y_position = (screen_height - window_height) // 3
-root.geometry(f"{window_width}x{window_height}+{x_position}+{y_position}")
 root.mainloop()
