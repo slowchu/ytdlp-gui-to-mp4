@@ -27,7 +27,7 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 
 ---
 
-## 📦 Requirements (if running from source)
+## 📦 Requirements (if running from .py source)
 
 - Python 3.7 or later
 - `yt-dlp` installed (`yt-dlp.exe` must be in the same folder or system PATH)
