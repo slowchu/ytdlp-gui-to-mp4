@@ -63,6 +63,21 @@ base_bitrate_dict = {
 }
 reference_quality = 23
 
+def get_crf_fudge_factor_exponential(crf):
+    """
+    Returns a fudge factor that grows exponentially so that:
+      - at CRF=30, factor ~1.0
+      - at CRF=18, factor ~2.0
+    """
+    min_crf, max_crf = 18, 30
+    # Clamp CRF value
+    crf = max(min_crf, min(crf, max_crf))
+    # We want b^(max_crf - CRF) = factor, with factor=2.0 at CRF=18 (difference 12 steps)
+    # So b^12 = 2 -> b = 2^(1/12)
+    b = 2 ** (1/12)
+    exponent = (max_crf - crf)
+    return b ** exponent
+
 def fetch_video_duration(url):
     try:
         result = subprocess.run(
@@ -87,7 +102,6 @@ def update_estimated_size():
         estimated_label.config(text="Estimated Output Size: Unable to determine duration")
         return
 
-    # Compute a simple estimate and display it as a range of [half, double]
     if discord_var.get():
         # Discord Optimized: fixed settings (720p, CRF 28, 96k audio)
         res = "720p"
@@ -97,21 +111,25 @@ def update_estimated_size():
         estimated_video_bitrate = base_bitrate * multiplier
         total_bitrate = estimated_video_bitrate + 96
         estimated_size = (duration * total_bitrate) / 8000.0
-        lower_bound = estimated_size / 2
-        upper_bound = estimated_size * 2
+        lower_bound = estimated_size * 0.50
+        upper_bound = estimated_size * 0.75
         estimated_label.config(
             text=f"Estimated Output Size: {lower_bound:.1f} MB - {upper_bound:.1f} MB (Discord Optimized)"
         )
     else:
+        # Non-Discord: use CRF-based exponential fudge factor
         res = resolution_var.get()
         base_bitrate = base_bitrate_dict.get(res, 1500)
         quality_val = quality_var.get()
         multiplier = reference_quality / quality_val
-        estimated_video_bitrate = base_bitrate * multiplier
+
+        fudge_factor = get_crf_fudge_factor_exponential(quality_val)
+        estimated_video_bitrate = base_bitrate * multiplier * fudge_factor
+
         total_bitrate = estimated_video_bitrate + 128
         estimated_size = (duration * total_bitrate) / 8000.0
-        lower_bound = estimated_size / 2
-        upper_bound = estimated_size * 2
+        lower_bound = estimated_size * 0.50
+        upper_bound = estimated_size * 0.75
         estimated_label.config(
             text=f"Estimated Output Size: {lower_bound:.1f} MB - {upper_bound:.1f} MB"
         )
@@ -123,10 +141,8 @@ def download_and_convert(url, filename):
     try:
         status_label.config(text="Downloading Video...")
         progress_bar.start()
-
         raw_path = os.path.join(DOWNLOAD_DIR, f"{filename}_raw.webm")
         final_path = os.path.join(DOWNLOAD_DIR, f"{filename}.mp4")
-
         ytdlp_cmd = [
             YT_DLP_PATH,
             "-f", "bv*[ext=webm]+ba[ext=webm]/best",
@@ -134,25 +150,17 @@ def download_and_convert(url, filename):
             url
         ]
         subprocess.run(ytdlp_cmd, check=True, creationflags=CREATE_NO_WINDOW)
-
         status_label.config(text="Converting Video...")
-
-        # Determine the scale filter based on the user's resolution choice
         res = resolution_var.get()
         if discord_var.get():
-            # Force 720p for Discord
-            res = "720p"
+            res = "720p"  # Force 720p for Discord
 
         if res == "Original":
-            # Use 'iw:-2' so the original width is kept, but height is forced to an even number
             scale_filter = "scale=iw:-2:flags=lanczos"
         elif res == "4K":
-            # 3840 x ? => use -2 to force an even height
             scale_filter = "scale=3840:-2:flags=lanczos"
         else:
-            # e.g. "720p" => numeric = "720"
             numeric = res.replace("p", "")
-            # scale=[width or height]:-2 to ensure the computed dimension is even
             scale_filter = f"scale={numeric}:-2:flags=lanczos"
 
         if discord_var.get():
@@ -181,12 +189,9 @@ def download_and_convert(url, filename):
                 "-b:a", "128k",
                 final_path
             ]
-
         subprocess.run(ffmpeg_cmd, check=True, creationflags=CREATE_NO_WINDOW)
-
         if os.path.exists(raw_path):
             os.remove(raw_path)
-
         status_label.config(text="Done")
         messagebox.showinfo("Success", f"Saved to:\n{final_path}")
     except subprocess.CalledProcessError as e:
@@ -201,20 +206,16 @@ def download_and_convert(url, filename):
 def start_download():
     url = url_entry.get().strip()
     filename = filename_entry.get().strip()
-
     if not url:
         messagebox.showwarning("Missing URL", "Please enter a video platform URL.")
         return
     if not filename:
         messagebox.showwarning("Missing Filename", "Please enter a filename.")
         return
-
-    # Sanitize filename
     filename = "".join(c for c in filename if c.isalnum() or c in (' ', '_', '-')).rstrip()
     threading.Thread(target=download_and_convert, args=(url, filename), daemon=True).start()
 
 def on_discord_toggle(*args):
-    """Enable or disable resolution and quality controls based on Discord checkbox."""
     if discord_var.get():
         resolution_menu.config(state="disabled")
         quality_slider.config(state="disabled")
@@ -222,7 +223,7 @@ def on_discord_toggle(*args):
     else:
         resolution_menu.config(state="normal")
         quality_slider.config(state="normal")
-    start_estimation_thread()  # update filesize estimate
+    start_estimation_thread()
 
 def update_quality_label(val=None):
     quality_value_label.config(text=f"{quality_var.get():.0f}")
@@ -230,10 +231,8 @@ def update_quality_label(val=None):
 # === GUI ===
 root = tk.Tk()
 root.title("Video Downloader & Converter")
-
 screen_width = root.winfo_screenwidth()
 screen_height = root.winfo_screenheight()
-
 root.resizable(False, False)
 
 tk.Label(root, text="Video Platform URL:").pack(pady=(10, 0))
@@ -258,20 +257,13 @@ estimated_label.pack(pady=(0, 10))
 tk.Label(root, text="Video Quality (Lower value = higher quality):").pack()
 slider_frame = tk.Frame(root)
 slider_frame.pack(fill="x", padx=10)
-
-# Left static label
 tk.Label(slider_frame, text="Low (Smaller File)").pack(side="left", padx=(15, 5))
-
-# Use ttk.Scale for the quality slider, tied to quality_var.
 quality_var = tk.DoubleVar(value=23)
 quality_slider = ttk.Scale(slider_frame, from_=30, to=18, orient=tk.HORIZONTAL,
                            variable=quality_var, command=update_quality_label)
 quality_slider.pack(side="left", fill="x", expand=True, padx=10)
-
-# Label to display the current value
 quality_value_label = tk.Label(slider_frame, text=f"{quality_var.get():.0f}")
 quality_value_label.pack(side="left", padx=(5, 15))
-
 tk.Label(slider_frame, text="(Higher value = Larger File)").pack(side="left")
 
 discord_var = tk.BooleanVar()
@@ -289,12 +281,10 @@ progress_bar.pack(pady=(5, 0))
 status_label = tk.Label(root, text="Idle")
 status_label.pack(pady=(5, 10))
 
-# Center the window
 root.update_idletasks()
 window_width = 500
 window_height = root.winfo_reqheight()
 x_position = (screen_width - window_width) // 2
 y_position = (screen_height - window_height) // 3
 root.geometry(f"{window_width}x{window_height}+{x_position}+{y_position}")
-
 root.mainloop()
