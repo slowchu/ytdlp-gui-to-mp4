@@ -53,6 +53,7 @@ if not videos_dir:
 DOWNLOAD_DIR = os.path.join(videos_dir, "YT-DLP Downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
+# Base bitrate assumptions (in kbps) for re-encoding at each resolution
 base_bitrate_dict = {
     "Original": 1500,
     "480p": 1000,
@@ -63,18 +64,47 @@ base_bitrate_dict = {
 }
 reference_quality = 23
 
+
+
+
+
+
+
+
+
+
+
+
+
+def get_static_image_multiplier(crf):
+    crf = max(18, min(30, crf))
+    return 0.054 - ((crf - 18) / 12) * (0.054 - 0.028)
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Global fudge factor to boost the computed estimate.
+global_fudge = 1.9
+
 def get_crf_fudge_factor_exponential(crf):
     """
-    Returns a fudge factor that grows exponentially so that:
-      - at CRF=30, factor ~1.0
-      - at CRF=18, factor ~2.0
+    Returns an exponential fudge factor so that:
+      - at CRF=30, factor ~ 1.0
+      - at CRF=18, factor ~ 2.0
+    (This function remains unchanged.)
     """
     min_crf, max_crf = 18, 30
-    # Clamp CRF value
     crf = max(min_crf, min(crf, max_crf))
-    # We want b^(max_crf - CRF) = factor, with factor=2.0 at CRF=18 (difference 12 steps)
-    # So b^12 = 2 -> b = 2^(1/12)
-    b = 2 ** (1/12)
+    b = 2 ** (1/12)  # b^12 = 2
     exponent = (max_crf - crf)
     return b ** exponent
 
@@ -91,6 +121,21 @@ def fetch_video_duration(url):
     except Exception:
         return 0
 
+def fetch_filesize_approx(url):
+    try:
+        result = subprocess.run(
+            [YT_DLP_PATH, "--print", "%(filesize_approx)s", url],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            creationflags=CREATE_NO_WINDOW
+        )
+        fs_str = result.stdout.strip()
+        if fs_str and fs_str.lower() != "none":
+            return int(fs_str)
+    except Exception:
+        return None
+
 def update_estimated_size():
     url = url_entry.get().strip()
     if not url:
@@ -102,36 +147,80 @@ def update_estimated_size():
         estimated_label.config(text="Estimated Output Size: Unable to determine duration")
         return
 
+    # Fetch source filesize (in bytes)
+    source_size = fetch_filesize_approx(url)
+    if source_size:
+        source_size_MB = source_size / (1024 * 1024)
+    else:
+        source_size_MB = None
+
+    def blend_estimate(computed_est, computed_total_bitrate_kbps):
+        """
+        Blends the computed estimate with the source filesize estimate.
+        Weight = (source_avg_bitrate / computed_total_bitrate), clamped between 0.3 and 1.0.
+        """
+        if not source_size_MB or duration <= 0:
+            return computed_est
+
+        source_avg_bitrate = (source_size * 8) / (duration * 1000)  # in kbps
+        weight = source_avg_bitrate / computed_total_bitrate_kbps
+        weight = max(0.3, min(1.0, weight))
+        return weight * computed_est + (1 - weight) * source_size_MB
+
     if discord_var.get():
         # Discord Optimized: fixed settings (720p, CRF 28, 96k audio)
         res = "720p"
         base_bitrate = base_bitrate_dict.get(res, 1500)
-        quality_val = 28
-        multiplier = reference_quality / quality_val
-        estimated_video_bitrate = base_bitrate * multiplier
-        total_bitrate = estimated_video_bitrate + 96
-        estimated_size = (duration * total_bitrate) / 8000.0
-        lower_bound = estimated_size * 0.50
-        upper_bound = estimated_size * 0.75
+        crf_val = 28
+        multiplier = reference_quality / crf_val
+        fudge_factor = get_crf_fudge_factor_exponential(crf_val)
+        computed_video_bitrate = base_bitrate * multiplier * fudge_factor
+        total_bitrate = computed_video_bitrate + 96  # kbps
+        computed_estimated_size = (duration * total_bitrate) / 8000.0  # MB
+
+        # Apply global fudge factor
+        computed_estimated_size *= global_fudge
+
+        
+        if static_image_var.get():
+            computed_estimated_size *= get_static_image_multiplier(crf_val)
+
+        lower_bound = computed_estimated_size * 0.50
+        upper_bound = computed_estimated_size * 0.75
+
+        final_lower = blend_estimate(lower_bound, total_bitrate)
+        final_upper = blend_estimate(upper_bound, total_bitrate)
+
         estimated_label.config(
-            text=f"Estimated Output Size: {lower_bound:.1f} MB - {upper_bound:.1f} MB (Discord Optimized)"
+            text=f"Estimated Output Size: {final_lower:.1f} MB - {final_upper:.1f} MB (Discord Optimized)"
         )
     else:
-        # Non-Discord: use CRF-based exponential fudge factor
+        # Non-Discord mode
         res = resolution_var.get()
         base_bitrate = base_bitrate_dict.get(res, 1500)
-        quality_val = quality_var.get()
-        multiplier = reference_quality / quality_val
+        crf_val = quality_var.get()
+        multiplier = reference_quality / crf_val
+        fudge_factor = get_crf_fudge_factor_exponential(crf_val)
 
-        fudge_factor = get_crf_fudge_factor_exponential(quality_val)
-        estimated_video_bitrate = base_bitrate * multiplier * fudge_factor
+        computed_video_bitrate = base_bitrate * multiplier * fudge_factor
+        total_bitrate = computed_video_bitrate + 128  # kbps
+        computed_estimated_size = (duration * total_bitrate) / 8000.0  # MB
 
-        total_bitrate = estimated_video_bitrate + 128
-        estimated_size = (duration * total_bitrate) / 8000.0
-        lower_bound = estimated_size * 0.50
-        upper_bound = estimated_size * 0.75
+        # Apply global fudge factor
+        computed_estimated_size *= global_fudge
+
+        
+        if static_image_var.get():
+            computed_estimated_size *= get_static_image_multiplier(crf_val)
+
+        lower_bound = computed_estimated_size * 0.50
+        upper_bound = computed_estimated_size * 0.75
+
+        final_lower = blend_estimate(lower_bound, total_bitrate)
+        final_upper = blend_estimate(upper_bound, total_bitrate)
+
         estimated_label.config(
-            text=f"Estimated Output Size: {lower_bound:.1f} MB - {upper_bound:.1f} MB"
+            text=f"Estimated Output Size: {final_lower:.1f} MB - {final_upper:.1f} MB"
         )
 
 def start_estimation_thread():
@@ -249,6 +338,9 @@ resolution_var = tk.StringVar(root)
 resolution_var.set("720p")
 resolution_menu = tk.OptionMenu(root, resolution_var, *resolution_options, command=lambda _: start_estimation_thread())
 resolution_menu.pack(pady=(0, 10))
+
+static_image_var = tk.BooleanVar()
+tk.Checkbutton(root, text="Static Image (e.g. music with no motion)", variable=static_image_var).pack(pady=(0, 10))
 
 tk.Button(root, text="Estimate File Size", command=start_estimation_thread).pack(pady=(0, 5))
 estimated_label = tk.Label(root, text="Estimated Output Size: N/A")
