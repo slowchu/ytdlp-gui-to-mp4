@@ -11,6 +11,11 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 - More file-size estimate tweaks/tuning
 - Final update with file-size estimate, next update will be a streamlined version with no file-size estimate (too much of a headache to deal with since it estimates without downloading the raw file to be converted. Perhaps at some point I might put out a version where the program will download the raw file first to get a better estimate, but for now I'm going to move forward with versions that don't have this feature since its been too inaccurate depending on videos chosen and has caused me to spend way too much time trying to tune a rather unimportant feature. If discord optimized outputs, or even 480p/30CRF are still too large then there isn't much you can do without outright editing your desired video yourself for length)
 
+
+![image](https://github.com/user-attachments/assets/13cdebb8-dc50-4115-81fa-a54ce3a482b3)
+
+
+
 ## ✅ Features
 
 - Paste any yt-dlp supported video platform URL 
