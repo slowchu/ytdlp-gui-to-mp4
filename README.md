@@ -9,7 +9,7 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 ---
 [Release v1.4](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.4)
 - Adjusted how file size estimate works
-- Added exponetial scaled fudging to filesize estimate for a more accurate output range
+- Added Exponential CRF Fudge Factor to filesize estimate for a more accurate output range
 
 ## ✅ Features
 
