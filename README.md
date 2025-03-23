@@ -8,7 +8,7 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 
 ---
 [Release v1.5.2](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.5.2)
--Description text fixed/repositioned
+- Description text fixed/repositioned
 
 
 ![image](https://github.com/user-attachments/assets/837f25d7-5b16-4c98-a966-49adef701f8d)
