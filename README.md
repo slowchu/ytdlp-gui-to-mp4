@@ -52,3 +52,11 @@ This project includes a helpful batch script: `install-tools.bat`
 3. Wait for it to finish downloading and updating your system
 
 > 💡 You may need to restart your terminal or PC after running it for PATH changes to apply.
+
+
+Disclaimer
+
+This tool uses FFmpeg, a free and open-source multimedia framework licensed under the GNU General Public License (GPL) or Lesser GPL (LGPL), depending on the build.
+
+FFmpeg is not distributed with this project. To learn more or get the latest version, visit: https://ffmpeg.org
+
