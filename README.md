@@ -4,11 +4,12 @@ A lightweight, open-source graphical interface for downloading and converting vi
 
 Designed to make downloading and converting videos simple, fast, and Discord-friendly — no terminal needed.
 
-### Strongly suggest running the [batchfile](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/download/v1.3/install-tools.bat) to install FFMPEG and yt-dlp automatically for easiest compatibility
+### Strongly suggest running the [batchfile](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/download/v1.4/install-tools.bat) to install FFMPEG and yt-dlp automatically for easiest compatibility
 
 ---
-[Release v1.3](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.3)
-- Fixed issues with resolution scaling causing FFMPEG encoder to fail
+[Release v1.4](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.4)
+- Adjusted how file size estimate works
+- Added exponetial scaled fudging to filesize estimate for a more accurate output range
 
 ## ✅ Features
 
