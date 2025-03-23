@@ -14,7 +14,7 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 - Paste any supported video platform URL supported by yt-dlp
 - Choose your output filename
 - Adjust video quality using an intuitive slider
-- “Discord Optimized” mode:
+- “Discord Optimized” mode, attempts to output at low settings for non-nitro file limits:
   - 720p max resolution
   - CRF 28 for size reduction
   - 96kbps audio
