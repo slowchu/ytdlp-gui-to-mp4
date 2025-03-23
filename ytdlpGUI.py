@@ -1,3 +1,4 @@
+
 import tkinter as tk
 from tkinter import messagebox
 import subprocess
@@ -95,8 +96,9 @@ def update_estimated_size():
     audio_bitrate = 96 if discord_var.get() else 128
     total_bitrate = estimated_video_bitrate + audio_bitrate
 
+    # More aggressive fudge when Static Image is checked
     if static_var.get():
-        total_bitrate *= 0.65
+        total_bitrate *= 0.20
 
     size_mb = (duration * total_bitrate) / 8000.0
     low = size_mb * 0.95
@@ -208,7 +210,12 @@ resolution_menu.pack(pady=(0, 10))
 
 tk.Button(root, text="Estimate File Size", command=start_estimation_thread).pack(pady=(0, 5))
 estimated_label = tk.Label(root, text="Estimated Output Size: N/A")
-estimated_label.pack(pady=(0, 10))
+estimated_label.pack(pady=(0, 5))
+
+# ⬇ Static Image checkbox now placed here
+static_var = tk.BooleanVar()
+static_checkbox = tk.Checkbutton(root, text="Static Image (Less Motion)", variable=static_var, command=start_estimation_thread)
+static_checkbox.pack(pady=(0, 10))
 
 tk.Label(root, text="Video Quality (Lower value = higher quality):").pack()
 slider_frame = tk.Frame(root)
@@ -224,12 +231,8 @@ tk.Label(slider_frame, text="(Higher value = Larger File)").pack(side="left")
 
 discord_var = tk.BooleanVar()
 discord_checkbox = tk.Checkbutton(root, text="Discord Optimized (CRF 28, 720p max, 96k audio)", variable=discord_var)
-discord_checkbox.pack(pady=(5, 2))
+discord_checkbox.pack(pady=(5, 10))
 discord_var.trace("w", on_discord_toggle)
-
-static_var = tk.BooleanVar()
-static_checkbox = tk.Checkbutton(root, text="Static Image (Less Motion)", variable=static_var, command=start_estimation_thread)
-static_checkbox.pack(pady=(0, 10))
 
 tk.Button(root, text="Download & Convert", command=start_download).pack(pady=5)
 progress_bar = ttk.Progressbar(root, mode='indeterminate', length=350)
