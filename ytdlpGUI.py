@@ -87,16 +87,21 @@ def update_estimated_size():
         estimated_label.config(text="Estimated Output Size: Unable to determine duration")
         return
 
+    # Compute a simple estimate and display it as a range of [half, double]
     if discord_var.get():
-        # Use fixed settings for Discord optimization
+        # Discord Optimized: fixed settings (720p, CRF 28, 96k audio)
         res = "720p"
         base_bitrate = base_bitrate_dict.get(res, 1500)
         quality_val = 28
         multiplier = reference_quality / quality_val
         estimated_video_bitrate = base_bitrate * multiplier
-        total_bitrate = estimated_video_bitrate + 96  # Discord uses 96k audio
+        total_bitrate = estimated_video_bitrate + 96
         estimated_size = (duration * total_bitrate) / 8000.0
-        estimated_label.config(text=f"Estimated Output Size: {estimated_size:.1f} MB (Discord Optimized)")
+        lower_bound = estimated_size / 2
+        upper_bound = estimated_size * 2
+        estimated_label.config(
+            text=f"Estimated Output Size: {lower_bound:.1f} MB - {upper_bound:.1f} MB (Discord Optimized)"
+        )
     else:
         res = resolution_var.get()
         base_bitrate = base_bitrate_dict.get(res, 1500)
@@ -105,7 +110,11 @@ def update_estimated_size():
         estimated_video_bitrate = base_bitrate * multiplier
         total_bitrate = estimated_video_bitrate + 128
         estimated_size = (duration * total_bitrate) / 8000.0
-        estimated_label.config(text=f"Estimated Output Size: {estimated_size:.1f} MB")
+        lower_bound = estimated_size / 2
+        upper_bound = estimated_size * 2
+        estimated_label.config(
+            text=f"Estimated Output Size: {lower_bound:.1f} MB - {upper_bound:.1f} MB"
+        )
 
 def start_estimation_thread():
     threading.Thread(target=update_estimated_size, daemon=True).start()
@@ -128,18 +137,23 @@ def download_and_convert(url, filename):
 
         status_label.config(text="Converting Video...")
 
-        # Use Discord settings if enabled
+        # Determine the scale filter based on the user's resolution choice
         res = resolution_var.get()
         if discord_var.get():
-            res = "720p"  # force 720p for Discord
-        # Updated scale_filter to include Lanczos flags
+            # Force 720p for Discord
+            res = "720p"
+
         if res == "Original":
-            scale_filter = "scale=iw:ih:flags=lanczos"
+            # Use 'iw:-2' so the original width is kept, but height is forced to an even number
+            scale_filter = "scale=iw:-2:flags=lanczos"
         elif res == "4K":
-            scale_filter = "scale=3840:-1:flags=lanczos"
+            # 3840 x ? => use -2 to force an even height
+            scale_filter = "scale=3840:-2:flags=lanczos"
         else:
+            # e.g. "720p" => numeric = "720"
             numeric = res.replace("p", "")
-            scale_filter = f"scale={numeric}:-1:flags=lanczos"
+            # scale=[width or height]:-2 to ensure the computed dimension is even
+            scale_filter = f"scale={numeric}:-2:flags=lanczos"
 
         if discord_var.get():
             crf_value = "28"
@@ -200,7 +214,7 @@ def start_download():
     threading.Thread(target=download_and_convert, args=(url, filename), daemon=True).start()
 
 def on_discord_toggle(*args):
-    """Enable or disable the resolution and quality controls based on Discord checkbox."""
+    """Enable or disable resolution and quality controls based on Discord checkbox."""
     if discord_var.get():
         resolution_menu.config(state="disabled")
         quality_slider.config(state="disabled")
@@ -208,7 +222,7 @@ def on_discord_toggle(*args):
     else:
         resolution_menu.config(state="normal")
         quality_slider.config(state="normal")
-    start_estimation_thread()  # update the estimated filesize
+    start_estimation_thread()  # update filesize estimate
 
 def update_quality_label(val=None):
     quality_value_label.config(text=f"{quality_var.get():.0f}")
@@ -275,7 +289,7 @@ progress_bar.pack(pady=(5, 0))
 status_label = tk.Label(root, text="Idle")
 status_label.pack(pady=(5, 10))
 
-# Now set size and center it after all widgets are packed
+# Center the window
 root.update_idletasks()
 window_width = 500
 window_height = root.winfo_reqheight()
