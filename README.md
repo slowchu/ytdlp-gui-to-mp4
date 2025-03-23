@@ -60,3 +60,19 @@ This tool uses FFmpeg, a free and open-source multimedia framework licensed unde
 
 FFmpeg is not distributed with this project. To learn more or get the latest version, visit: https://ffmpeg.org
 
+This tool uses:
+
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — a powerful command-line video downloader (Unlicense)
+- [FFmpeg](https://ffmpeg.org) a free and open-source multimedia framework licensed under the GNU General Public License (GPL) or Lesser GPL (LGPL), depending on the build.
+
+
+These tools are not bundled or distributed with the project. Visit their official pages for more information. 
+
+This project optionally uses a batch file (`install-tools.bat`) to download and configure:
+
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — a command-line video downloader (licensed under The Unlicense)
+- [FFmpeg](https://ffmpeg.org) — a multimedia converter (licensed under GPL/LGPL)
+
+The script downloads these tools from their official sources and installs them to a local tools directory (e.g. `C:\Program Files\VideoTools`). It also adds them to your system PATH so the GUI can access them.
+
+These tools are not created or maintained by this project. They are used as external dependencies. Running the batch file is entirely optional — you may install and configure these tools manually if preferred.
