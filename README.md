@@ -4,6 +4,8 @@ A lightweight, open-source graphical interface for downloading and converting vi
 
 Designed to make downloading and converting videos simple, fast, and Discord-friendly — no terminal needed.
 
+### Strongly suggest running the batchfile to install FFMPEG and yt-dlp automatically for easiest compatibility
+
 ---
 [Release v1.2](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.2)
 - Added resolution output drop down
@@ -14,13 +16,14 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 
 - Paste any supported video platform URL supported by yt-dlp
 - Choose your output filename
-- Adjust video quality using an intuitive slider
+- Adjust video quality using an intuitive slider and resolution drop down
 - “Discord Optimized” mode, attempts to output at low settings for non-nitro file limits:
   - 720p max resolution
   - CRF 28 for size reduction
   - 96kbps audio
 - MP4 output (H.264 + AAC)
 - Saves files to your system's `Videos/YT-DLP Downloads` folder
+- Filesize estimator
 - Clean GUI, no terminal required
 
 ---
