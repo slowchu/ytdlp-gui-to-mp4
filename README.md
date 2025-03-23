@@ -7,9 +7,9 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 ### Strongly suggest running the [batchfile](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/download/v1.0/install-tools.bat) to install FFMPEG and yt-dlp automatically for easiest compatibility
 
 ---
-[Release v1.4.1](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.4.1)
-- Tuned File Size estimate
-- Added "Static Image" video button for videos with static images (More accurate file size estimate)
+[Release v1.5](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.5)
+- fixed video resolution height being scaled improperly
+
 
 ## ✅ Features
 
