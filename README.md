@@ -1,6 +1,6 @@
 # ytdlp-gui-to-mp4
 
-A lightweight, open-source graphical interface for downloading and converting videos from hundreds of supported platforms using [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [FFmpeg](https://ffmpeg.org/).
+A lightweight, open-source graphical interface for downloading and converting videos from supported platforms using [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [FFmpeg](https://ffmpeg.org/).
 
 Designed to make downloading and converting videos simple, fast, and Discord-friendly — no terminal needed.
 
