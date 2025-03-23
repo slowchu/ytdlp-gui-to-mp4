@@ -5,6 +5,9 @@ A lightweight, open-source graphical interface for downloading and converting vi
 Designed to make downloading and converting videos simple, fast, and Discord-friendly — no terminal needed.
 
 ---
+[Release v1.1](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.1)
+- Fixed issue where each step of the program would open a CMD window
+- made the progress bar more descriptive
 
 ## ✅ Features
 
