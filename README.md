@@ -7,10 +7,8 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 ### Strongly suggest running the batchfile to install FFMPEG and yt-dlp automatically for easiest compatibility
 
 ---
-[Release v1.2](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.2)
-- Added resolution output drop down
-- Added filesize estimate button (after URL is added, it takes a moment to estimate)
-- Quality Slider and Resolution dropdown will grey out/disable when Discord Optimized is checked
+[Release v1.3](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.3)
+- Fixed issues with resolution scaling causing FFMPEG encoder to fail
 
 ## ✅ Features
 
