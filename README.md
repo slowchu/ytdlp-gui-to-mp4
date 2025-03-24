@@ -27,7 +27,7 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
   - 96kbps audio
 - MP4 output (H.264 + 128k or 96k AAC)
 - Saves files to your system's `Videos/YT-DLP Downloads` folder
-- Filesize estimator
+- Filesize estimator + Static Image modifier (makes estimate more accurate for videos with static images, does **not** control quality)
 - Clean GUI, no terminal required
 
 ---
