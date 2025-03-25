@@ -1,4 +1,3 @@
-
 import tkinter as tk
 from tkinter import messagebox
 import subprocess
@@ -108,23 +107,58 @@ def update_estimated_size():
 def start_estimation_thread():
     threading.Thread(target=update_estimated_size, daemon=True).start()
 
-def download_and_convert(url, filename):
+def try_download(cmd):
     try:
+        subprocess.run(cmd, check=True, creationflags=CREATE_NO_WINDOW)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+def download_and_convert(url, filename):
+    # Build raw and final paths first, so we can check duplicates
+    raw_path_base = os.path.join(DOWNLOAD_DIR, f"{filename}_raw")
+    raw_path = raw_path_base + ".mkv"  # We'll merge everything into an mkv
+    final_path = os.path.join(DOWNLOAD_DIR, f"{filename}.mp4")
+
+    # DUPLICATE NAME CHECK (before starting progress bar)
+    if os.path.exists(final_path):
+        answer = messagebox.askyesno(
+            "Duplicate Name Detected",
+            f"'{final_path}' already exists.\n\nDo you want to overwrite it?"
+        )
+        if not answer:
+            status_label.config(text="Canceled")
+            return  # Stop here, don't download or convert
+
+    try:
+        # If we get here, user said "Yes" or file doesn't exist
         status_label.config(text="Downloading Video...")
         progress_bar.start()
 
-        raw_path = os.path.join(DOWNLOAD_DIR, f"{filename}_raw.webm")
-        final_path = os.path.join(DOWNLOAD_DIR, f"{filename}.mp4")
-
-        ytdlp_cmd = [
+        # 1) Try bestvideo*+bestaudio
+        ytdlp_cmd_1 = [
             YT_DLP_PATH,
-            "-f", "bv*[ext=webm]+ba[ext=webm]/best",
+            "-f", "bestvideo*+bestaudio",
+            "--merge-output-format", "mkv",
             "-o", raw_path,
             url
         ]
-        subprocess.run(ytdlp_cmd, check=True, creationflags=CREATE_NO_WINDOW)
+
+        # 2) Fallback: best
+        ytdlp_cmd_2 = [
+            YT_DLP_PATH,
+            "-f", "best",
+            "--merge-output-format", "mkv",
+            "-o", raw_path,
+            url
+        ]
+
+        if not try_download(ytdlp_cmd_1):
+            if not try_download(ytdlp_cmd_2):
+                raise Exception("yt-dlp failed to download the video with all attempted formats.")
 
         status_label.config(text="Converting Video...")
+
         res = resolution_var.get() if not discord_var.get() else "720p"
         if res == "Original":
             scale_filter = "scale=iw:ih:flags=lanczos"
@@ -137,8 +171,11 @@ def download_and_convert(url, filename):
 
         crf_value = "28" if discord_var.get() else str(quality_var.get())
         audio_bitrate = "96k" if discord_var.get() else "128k"
+
+        # Add '-y' to overwrite without FFmpeg prompting again
         ffmpeg_cmd = [
             FFMPEG_PATH,
+            "-y",
             "-i", raw_path,
             "-c:v", "libx264",
             "-crf", crf_value,
@@ -212,7 +249,6 @@ tk.Button(root, text="Estimate File Size", command=start_estimation_thread).pack
 estimated_label = tk.Label(root, text="Estimated Output Size: N/A")
 estimated_label.pack(pady=(0, 5))
 
-# ⬇ Static Image checkbox now placed here
 static_var = tk.BooleanVar()
 static_checkbox = tk.Checkbutton(root, text="Static Image (Less Motion)", variable=static_var, command=start_estimation_thread)
 static_checkbox.pack(pady=(0, 10))
