@@ -1,76 +1,73 @@
-import tkinter as tk
-from tkinter import messagebox
-import subprocess
 import os
+import sys
 import threading
-import ctypes
-from tkinter import ttk
 import shutil
-import math
+import subprocess
+import tkinter as tk
+from tkinter import messagebox, ttk
+from yt_dlp import YoutubeDL
 
-CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+# -----------------------------------------------------------------------------
+# Constants & Helpers
+# -----------------------------------------------------------------------------
+if os.name == 'nt':
+    CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW
+else:
+    CREATE_NO_WINDOW = 0
 
-def get_windows_videos_folder():
-    try:
-        FOLDERID_Videos = '{18989B1D-99B5-455B-841C-AB7C74E4DDFC}'
-        SHGetKnownFolderPath = ctypes.windll.shell32.SHGetKnownFolderPath
-        SHGetKnownFolderPath.argtypes = [
-            ctypes.c_char_p, ctypes.c_uint32, ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)
-        ]
-        path_ptr = ctypes.c_wchar_p()
-        result = SHGetKnownFolderPath(FOLDERID_Videos.encode('utf-8'), 0, None, ctypes.byref(path_ptr))
-        return path_ptr.value
-    except Exception:
-        return None
 
-FFMPEG_PATH = shutil.which("ffmpeg")
-if not FFMPEG_PATH:
-    fallback_ffmpeg = r"C:\Program Files\VideoTools\ffmpeg.exe"
-    if os.path.exists(fallback_ffmpeg):
-        FFMPEG_PATH = fallback_ffmpeg
-    else:
-        messagebox.showerror("FFmpeg Not Found", "FFmpeg is not installed or not in PATH.")
-        exit()
+def find_tool(name, fallback_path=None):
+    """
+    Locate a tool by name in PATH or fallback location.
+    Exits with an error dialog if not found.
+    """
+    path = shutil.which(name)
+    if path:
+        return path
+    if fallback_path and os.path.exists(fallback_path):
+        return fallback_path
+    messagebox.showerror(f"{name} Not Found", f"{name} is not installed or not in PATH.")
+    sys.exit(1)
 
-YT_DLP_PATH = shutil.which("yt-dlp")
-if not YT_DLP_PATH:
-    fallback_ytdlp = r"C:\Program Files\VideoTools\yt-dlp.exe"
-    if os.path.exists(fallback_ytdlp):
-        YT_DLP_PATH = fallback_ytdlp
-    else:
-        messagebox.showerror("yt-dlp Not Found", "yt-dlp is not installed or not in PATH.")
-        exit()
 
-videos_dir = get_windows_videos_folder()
-if not videos_dir:
-    videos_dir = os.path.join(os.path.expanduser("~"), "Videos")
+def get_videos_folder():
+    """
+    Return the user's Videos folder on Windows or ~/Videos elsewhere.
+    """
+    if os.name == 'nt':
+        return os.path.join(os.environ.get("USERPROFILE", ""), "Videos")
+    return os.path.join(os.path.expanduser("~"), "Videos")
 
+FFMPEG_PATH = find_tool("ffmpeg", r"C:\Program Files\VideoTools\ffmpeg.exe")
+videos_dir = get_videos_folder()
 DOWNLOAD_DIR = os.path.join(videos_dir, "YT-DLP Downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-base_bitrate_dict = {
-    "Original": 1500,
-    "480p": 1000,
-    "720p": 1500,
-    "1080p": 2500,
-    "1440p": 4000,
-    "4K": 8000
+BASE_BITRATES = {
+    "Original": 1500, "480p": 1000, "720p": 1500,
+    "1080p": 2500, "1440p": 4000, "4K": 8000
 }
-reference_quality = 23
+REFERENCE_CRITERION = 23
 
+# -----------------------------------------------------------------------------
+# Video Duration via yt_dlp API
+# -----------------------------------------------------------------------------
 def fetch_video_duration(url):
+    """
+    Extract metadata and return duration in seconds.
+    """
     try:
-        result = subprocess.run(
-            [YT_DLP_PATH, "--print", "duration", url],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            creationflags=CREATE_NO_WINDOW
-        )
-        return float(result.stdout.strip())
+        with YoutubeDL({'quiet': True, 'skip_download': True}) as ydl:
+            info = ydl.extract_info(url, download=False)
+            return float(info.get('duration', 0))
     except Exception:
-        return 0
+        status_label.config(text="Duration fetch failed")
+        messagebox.showwarning("Duration Error", "Could not retrieve video duration. Check URL.")
+        return 0.0
 
+# -----------------------------------------------------------------------------
+# Size Estimation
+# -----------------------------------------------------------------------------
 def update_estimated_size():
     url = url_entry.get().strip()
     if not url:
@@ -82,138 +79,102 @@ def update_estimated_size():
         estimated_label.config(text="Estimated Output Size: Unable to determine duration")
         return
 
-    res = resolution_var.get() if not discord_var.get() else "720p"
-    base_bitrate = base_bitrate_dict.get(res, 1500)
-    crf = 28 if discord_var.get() else quality_var.get()
+    use_discord = discord_var.get()
+    res = "720p" if use_discord else resolution_var.get()
+    crf = 28 if use_discord else quality_var.get()
 
-    multiplier = reference_quality / crf
-    fudge_scaling = 0.028
-    fudge = 1 - ((crf - 18) / 12) * fudge_scaling
-    fudge = max(0.7, min(fudge, 1.0))
+    base = BASE_BITRATES.get(res, 1500)
+    mult = REFERENCE_CRITERION / crf
+    fudge = max(0.7, min(1.0, 1 - ((crf - 18) / 12) * 0.028))
 
-    estimated_video_bitrate = base_bitrate * multiplier * fudge
-    audio_bitrate = 96 if discord_var.get() else 128
-    total_bitrate = estimated_video_bitrate + audio_bitrate
-
-    # More aggressive fudge when Static Image is checked
+    vb = base * mult * fudge
+    ab = 96 if use_discord else 128
+    total = vb + ab
     if static_var.get():
-        total_bitrate *= 0.20
+        total *= 0.20  # reduce to 20% when static image
 
-    size_mb = (duration * total_bitrate) / 8000.0
-    low = size_mb * 0.95
-    high = size_mb * 1.25
-    estimated_label.config(text=f"Estimated Output Size: {low:.1f} MB - {high:.1f} MB")
+    size_mb = (duration * total) / 8000.0
+    low, high = size_mb * 0.95, size_mb * 1.25
+    estimated_label.config(text=f"Estimated Output Size: {low:.1f}–{high:.1f} MB")
+
 
 def start_estimation_thread():
     threading.Thread(target=update_estimated_size, daemon=True).start()
 
-def try_download(cmd):
-    try:
-        subprocess.run(cmd, check=True, creationflags=CREATE_NO_WINDOW)
-        return True
-    except subprocess.CalledProcessError:
-        return False
-
+# -----------------------------------------------------------------------------
+# Download & Convert via yt_dlp API + ffmpeg subprocess
+# -----------------------------------------------------------------------------
 def download_and_convert(url, filename):
-    # Build raw and final paths first, so we can check duplicates
-    raw_path_base = os.path.join(DOWNLOAD_DIR, f"{filename}_raw")
-    raw_path = raw_path_base + ".mkv"  # We'll merge everything into an mkv
+    raw_path = os.path.join(DOWNLOAD_DIR, f"{filename}_raw.mkv")
     final_path = os.path.join(DOWNLOAD_DIR, f"{filename}.mp4")
 
-    # DUPLICATE NAME CHECK (before starting progress bar)
     if os.path.exists(final_path):
-        answer = messagebox.askyesno(
-            "Duplicate Name Detected",
-            f"'{final_path}' already exists.\n\nDo you want to overwrite it?"
-        )
-        if not answer:
-            status_label.config(text="Canceled")
-            return  # Stop here, don't download or convert
+        if not messagebox.askyesno("Exists", f"'{final_path}' exists. Overwrite?"):
+            status_label.config(text="Canceled by user")
+            return
 
     try:
-        # If we get here, user said "Yes" or file doesn't exist
-        status_label.config(text="Downloading Video...")
+        status_label.config(text="Downloading video...")
         progress_bar.start()
+        ydl_opts = {
+            'format': 'bestvideo*+bestaudio/best',
+            'merge_output_format': 'mkv',
+            'outtmpl': raw_path,
+        }
+        with YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
 
-        # 1) Try bestvideo*+bestaudio
-        ytdlp_cmd_1 = [
-            YT_DLP_PATH,
-            "-f", "bestvideo*+bestaudio",
-            "--merge-output-format", "mkv",
-            "-o", raw_path,
-            url
-        ]
-
-        # 2) Fallback: best
-        ytdlp_cmd_2 = [
-            YT_DLP_PATH,
-            "-f", "best",
-            "--merge-output-format", "mkv",
-            "-o", raw_path,
-            url
-        ]
-
-        if not try_download(ytdlp_cmd_1):
-            if not try_download(ytdlp_cmd_2):
-                raise Exception("yt-dlp failed to download the video with all attempted formats.")
-
-        status_label.config(text="Converting Video...")
-
-        res = resolution_var.get() if not discord_var.get() else "720p"
-        if res == "Original":
-            scale_filter = "scale=iw:ih:flags=lanczos"
-        elif res == "4K":
-            scale_filter = "scale=3840:2160:flags=lanczos"
+        status_label.config(text="Converting with FFmpeg...")
+        use_discord = discord_var.get()
+        target_res = "720p" if use_discord else resolution_var.get()
+        if target_res == "Original":
+            vf = "scale=iw:ih:flags=lanczos"
+        elif target_res == "4K":
+            vf = "scale=3840:2160:flags=lanczos"
         else:
-            width = int(int(res.replace("p", "")) * 16 / 9)
-            height = int(res.replace("p", ""))
-            scale_filter = f"scale={width}:{height}:flags=lanczos"
+            h = int(target_res.replace("p", ""))
+            vf = f"scale={int(h*16/9)}:{h}:flags=lanczos"
 
-        crf_value = "28" if discord_var.get() else str(quality_var.get())
-        audio_bitrate = "96k" if discord_var.get() else "128k"
+        crf_val = "28" if use_discord else str(quality_var.get())
+        audio_br = "96k" if use_discord else "128k"
 
-        # Add '-y' to overwrite without FFmpeg prompting again
-        ffmpeg_cmd = [
-            FFMPEG_PATH,
-            "-y",
-            "-i", raw_path,
-            "-c:v", "libx264",
-            "-crf", crf_value,
-            "-preset", "slow",
-            "-vf", scale_filter,
-            "-c:a", "aac",
-            "-b:a", audio_bitrate,
+        ff_cmd = [
+            FFMPEG_PATH, '-y', '-i', raw_path,
+            '-c:v', 'libx264', '-crf', crf_val, '-preset', 'slow',
+            '-vf', vf,
+            '-c:a', 'aac', '-b:a', audio_br,
             final_path
         ]
-        subprocess.run(ffmpeg_cmd, check=True, creationflags=CREATE_NO_WINDOW)
+        subprocess.run(ff_cmd, check=True, creationflags=CREATE_NO_WINDOW)
 
         if os.path.exists(raw_path):
             os.remove(raw_path)
 
         status_label.config(text="Done")
         messagebox.showinfo("Success", f"Saved to:\n{final_path}")
-    except subprocess.CalledProcessError as e:
-        status_label.config(text="Error")
-        messagebox.showerror("Error", f"Command failed:\n\n{e}")
-    except Exception as ex:
-        status_label.config(text="Error")
-        messagebox.showerror("Unexpected Error", str(ex))
+    except Exception as e:
+        status_label.config(text="Error during download/convert")
+        messagebox.showerror("Processing Error", str(e))
     finally:
         progress_bar.stop()
 
+
 def start_download():
     url = url_entry.get().strip()
-    filename = filename_entry.get().strip()
+    name = filename_entry.get().strip()
     if not url:
-        messagebox.showwarning("Missing URL", "Please enter a video platform URL.")
+        messagebox.showwarning("Input Required", "Please enter a video URL.")
         return
-    if not filename:
-        messagebox.showwarning("Missing Filename", "Please enter a filename.")
+    if not name:
+        messagebox.showwarning("Input Required", "Please enter an output filename.")
         return
-    filename = "".join(c for c in filename if c.isalnum() or c in (' ', '_', '-')).rstrip()
-    threading.Thread(target=download_and_convert, args=(url, filename), daemon=True).start()
+    safe = "".join(c for c in name if c.isalnum() or c in " _-").rstrip()
+    threading.Thread(target=download_and_convert, args=(url, safe), daemon=True).start()
 
-def on_discord_toggle(*args):
+# -----------------------------------------------------------------------------
+# UI Setup
+# -----------------------------------------------------------------------------
+def on_discord_toggle(*_):
     if discord_var.get():
         resolution_menu.config(state="disabled")
         quality_slider.config(state="disabled")
@@ -223,57 +184,57 @@ def on_discord_toggle(*args):
         quality_slider.config(state="normal")
     start_estimation_thread()
 
-def update_quality_label(val=None):
-    quality_value_label.config(text=f"{quality_var.get():.0f}")
-
 root = tk.Tk()
 root.title("Video Downloader & Converter")
 root.resizable(False, False)
 
-tk.Label(root, text="Video Platform URL:").pack(pady=(10, 0))
+# URL Input
+tk.Label(root, text="Enter Video URL:").pack(anchor="w", padx=10, pady=(10,0))
 url_entry = tk.Entry(root, width=60)
-url_entry.pack(pady=(0, 10))
+url_entry.pack(padx=10, pady=4)
 
-tk.Label(root, text="Output Filename (no extension):").pack()
+# Filename Input
+tk.Label(root, text="Enter Output Filename (no extension):").pack(anchor="w", padx=10)
 filename_entry = tk.Entry(root, width=60)
-filename_entry.pack(pady=(0, 10))
+filename_entry.pack(padx=10, pady=4)
 
-tk.Label(root, text="Select Resolution:").pack()
-resolution_options = ["Original", "480p", "720p", "1080p", "1440p", "4K"]
-resolution_var = tk.StringVar(root)
-resolution_var.set("720p")
+# Resolution
+tk.Label(root, text="Select Resolution:").pack(anchor="w", padx=10)
+resolution_options = ["Original","480p","720p","1080p","1440p","4K"]
+resolution_var = tk.StringVar(value="720p")
 resolution_menu = tk.OptionMenu(root, resolution_var, *resolution_options, command=lambda _: start_estimation_thread())
-resolution_menu.pack(pady=(0, 10))
+resolution_menu.pack(padx=10, pady=4)
 
-tk.Button(root, text="Estimate File Size", command=start_estimation_thread).pack(pady=(0, 5))
+# Estimate
+tk.Button(root, text="Estimate File Size", command=start_estimation_thread).pack(padx=10)
 estimated_label = tk.Label(root, text="Estimated Output Size: N/A")
-estimated_label.pack(pady=(0, 5))
+estimated_label.pack(padx=10, pady=4)
 
+# Static Image Mode
 static_var = tk.BooleanVar()
-static_checkbox = tk.Checkbutton(root, text="Static Image (Less Motion)", variable=static_var, command=start_estimation_thread)
-static_checkbox.pack(pady=(0, 10))
+tk.Checkbutton(root, text="Static Image (Low Motion) - reduces bitrate", variable=static_var, command=start_estimation_thread).pack(anchor="w", padx=10, pady=4)
 
-tk.Label(root, text="Video Quality Scale: (Low Quality - High Quality)").pack()
-slider_frame = tk.Frame(root)
-slider_frame.pack(fill="x", padx=10)
-tk.Label(slider_frame, text="(Higher value = Smaller File)").pack(side="left", padx=(15, 5))
-
+# Quality Slider
+tk.Label(root, text="Quality (High Quality ←→ Smaller File):").pack(anchor="w", padx=10)
+frame = tk.Frame(root)
+frame.pack(fill="x", padx=10)
+tk.Label(frame, text="High Quality").pack(side="left")
 quality_var = tk.DoubleVar(value=23)
-quality_slider = ttk.Scale(slider_frame, from_=30, to=18, orient=tk.HORIZONTAL, variable=quality_var, command=update_quality_label)
-quality_slider.pack(side="left", fill="x", expand=True, padx=10)
-quality_value_label = tk.Label(slider_frame, text=f"{quality_var.get():.0f}")
-quality_value_label.pack(side="left", padx=(5, 15))
-tk.Label(slider_frame, text="(Lower value = Larger File)").pack(side="left")
+quality_slider = ttk.Scale(frame, from_=30, to=18, variable=quality_var, command=lambda _: None)
+quality_slider.pack(side="left", fill="x", expand=True, padx=5)
+quality_value_label = tk.Label(frame, text=lambda: f"{quality_var.get():.0f}")
+quality_value_label.pack(side="left")
 
+# Discord Mode
 discord_var = tk.BooleanVar()
-discord_checkbox = tk.Checkbutton(root, text="Discord Optimized (CRF 28, 720p max, 96k audio)", variable=discord_var)
-discord_checkbox.pack(pady=(5, 10))
-discord_var.trace("w", on_discord_toggle)
+tk.Checkbutton(root, text="Discord Optimized Mode - suitable for 8MB limit", variable=discord_var, command=start_estimation_thread).pack(anchor="w", padx=10, pady=4)
+discord_var.trace_add("write", on_discord_toggle)
 
-tk.Button(root, text="Download & Convert", command=start_download).pack(pady=5)
+# Download Button
+tk.Button(root, text="Download & Convert", command=start_download).pack(padx=10, pady=6)
 progress_bar = ttk.Progressbar(root, mode='indeterminate', length=350)
-progress_bar.pack(pady=(5, 0))
-status_label = tk.Label(root, text="Idle")
-status_label.pack(pady=(5, 10))
+progress_bar.pack(padx=10)
+status_label = tk.Label(root, text="Idle - Ready to start")
+status_label.pack(padx=10, pady=6)
 
 root.mainloop()
