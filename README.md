@@ -4,13 +4,15 @@ A lightweight, open-source graphical interface for downloading and converting vi
 
 Designed to make downloading and converting videos simple, fast, and Discord-friendly — no terminal needed.
 
-### Strongly suggest running the [batchfile](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/download/v1.0/install-tools.bat) to install FFMPEG and yt-dlp automatically for easiest compatibility
+### Strongly suggest running the [batchfile](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/download/v1.6/install-tools.bat) to install FFMPEG and yt-dlp automatically for easiest compatibility. Keep the file if windows asks you to delete it. 
 
 ---
-[Release v1.5.3](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.5.3)
-- Woke up to the app not working for some reason. Now it works again
-- Discovered that trying to save a duplicate file name causes FFMPEG to hang forever. It won't hang anymore.
-- Added in a pop-up that asks if you want to override a duplicate file name
+[Release v1.6](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.6)
+- Fixed issue with encoding? Suddenly the app didn't work anymore, once again. It works now. (at least it works for me)
+
+- updated the batchfile to be a bit more reliable. Remember to run it as an admin.
+
+- added a toggle that lets you see whats going on. Will show basically whats going on in CMD, but inside the app itself. This is normally hidden with a no_window command, but its nice to be able to see more than just an "in progress" bar.
 
 
 ![image](https://github.com/user-attachments/assets/837f25d7-5b16-4c98-a966-49adef701f8d)
