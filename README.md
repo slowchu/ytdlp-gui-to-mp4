@@ -15,7 +15,8 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 - added a toggle that lets you see whats going on. Will show basically whats going on in CMD, but inside the app itself. This is normally hidden with a no_window command, but its nice to be able to see more than just an "in progress" bar.
 
 
-![image](https://github.com/user-attachments/assets/837f25d7-5b16-4c98-a966-49adef701f8d)
+![image](https://github.com/user-attachments/assets/9a8b20f4-6760-40a7-ab39-f55a788abddd)
+
 
 
 
