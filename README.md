@@ -7,12 +7,8 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 ### Strongly suggest running the [batchfile](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/download/v1.6/install-tools.bat) to install FFMPEG and yt-dlp automatically for easiest compatibility. Keep the file if windows asks you to delete it. 
 
 ---
-[Release v1.6](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.6)
-- Fixed issue with encoding? Suddenly the app didn't work anymore, once again. It works now. (at least it works for me)
-
-- updated the batchfile to be a bit more reliable. Remember to run it as an admin.
-
-- added a toggle that lets you see whats going on. Will show basically whats going on in CMD, but inside the app itself. This is normally hidden with a no_window command, but its nice to be able to see more than just an "in progress" bar.
+[Release v1.6.1](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.6.1)
+- Some sort of issues with video fragments and the program not always downloading video, just audio. Should work better now.
 
 
 ![image](https://github.com/user-attachments/assets/9a8b20f4-6760-40a7-ab39-f55a788abddd)
