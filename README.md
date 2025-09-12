@@ -7,8 +7,17 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 ### Strongly suggest running the [batchfile](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/download/v1.6/install-tools.bat) to install FFMPEG and yt-dlp automatically for easiest compatibility. Keep the file if windows asks you to delete it. 
 
 ---
-[Release v1.6.1](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.6.1)
-- Some sort of issues with video fragments and the program not always downloading video, just audio. Should work better now.
+[Release v1.7](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.7)
+
+Fixed:
+
+403 errors caused by yt-dlp using ios as the default method, now it avoids this if it can. This was the root issue of the raw files being "empty", and prior to this, updating yt-dlp would fix this. After multiple updates I realized from a bug report on yt-dlp what was going on.
+
+Changed:
+
+packaged as a onedir for two reasons, 1: allows the program to open faster 2: stop being flagged as malicious software so often
+
+Run install-tools.bat as an administration, extract files from the zip provided to anywhere, launch yt-dlp gui.exe.
 
 
 ![image](https://github.com/user-attachments/assets/9a8b20f4-6760-40a7-ab39-f55a788abddd)
