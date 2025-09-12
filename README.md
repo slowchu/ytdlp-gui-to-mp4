@@ -17,7 +17,7 @@ Changed:
 
 packaged as a onedir for two reasons, 1: allows the program to open faster 2: stop being flagged as malicious software so often
 
-Run install-tools.bat as an administration, extract files from the zip provided to anywhere, launch yt-dlp gui.exe.
+Run install-tools.bat as an administrator, extract files from the zip provided to anywhere, launch yt-dlp gui.exe.
 
 
 ![image](https://github.com/user-attachments/assets/9a8b20f4-6760-40a7-ab39-f55a788abddd)
