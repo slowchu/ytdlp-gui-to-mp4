@@ -10,8 +10,8 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 [Release v1.7](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.7)
 
 Fixed:
-
-403 errors caused by yt-dlp using ios as the default method, now it avoids this if it can. This was the root issue of the raw files being "empty", and prior to this, updating yt-dlp would fix this. After multiple updates I realized from a bug report on yt-dlp what was going on.
+ 
+403 errors caused by yt-dlp using ios as the default method, now it avoids this if it can. This was the root issue of the raw files being "empty", and prior to this, updating yt-dlp would fix this. After multiple attempts at yt-dlp updates not fixing this issue this time, I realized from a bug report on yt-dlp what was going on.
 
 Changed:
 
