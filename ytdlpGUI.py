@@ -16,18 +16,42 @@ command_output_buffer = []
 
 def get_windows_videos_folder():
     try:
-        FOLDERID_Videos = '{18989B1D-99B5-455-841C-AB7C74E4DDFC}'
+        import ctypes.wintypes
+
+        class GUID(ctypes.Structure):
+            _fields_ = [
+                ("Data1", ctypes.wintypes.DWORD),
+                ("Data2", ctypes.wintypes.WORD),
+                ("Data3", ctypes.wintypes.WORD),
+                ("Data4", ctypes.c_byte * 8),
+            ]
+
+        # {18989B1D-99B5-455B-841C-AB7C74E4DDFC} — Videos known folder
+        folderid_videos = GUID()
+        folderid_videos.Data1 = 0x18989B1D
+        folderid_videos.Data2 = 0x99B5
+        folderid_videos.Data3 = 0x455B
+        folderid_videos.Data4[:] = [0x84, 0x1C, 0xAB, 0x7C, 0x74, 0xE4, 0xDD, 0xFC]
+
         SHGetKnownFolderPath = ctypes.windll.shell32.SHGetKnownFolderPath
         SHGetKnownFolderPath.argtypes = [
-            ctypes.c_char_p, ctypes.c_uint32,
-            ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)
+            ctypes.POINTER(GUID), ctypes.wintypes.DWORD,
+            ctypes.wintypes.HANDLE, ctypes.POINTER(ctypes.c_wchar_p)
         ]
+        SHGetKnownFolderPath.restype = ctypes.HRESULT
+
         path_ptr = ctypes.c_wchar_p()
-        SHGetKnownFolderPath(
-            FOLDERID_Videos.encode('utf-8'),
+        hr = SHGetKnownFolderPath(
+            ctypes.byref(folderid_videos),
             0, None, ctypes.byref(path_ptr)
         )
-        return path_ptr.value
+        if hr != 0:
+            return None
+
+        result = path_ptr.value
+        # Free the COM-allocated string
+        ctypes.windll.ole32.CoTaskMemFree(path_ptr)
+        return result
     except Exception:
         return None
 
@@ -157,25 +181,21 @@ def download_and_convert(url, filename):
         status_label.config(text="Downloading...")
         progress_bar.start()
 
-        cmd1 = [
+        dl_cmd = [
             YT_DLP_PATH,
             "--ffmpeg-location", os.path.dirname(FFMPEG_PATH),
-            "-f", "bestvideo*+bestaudio",
+            "--extractor-args", "youtube:player_client=web",
+            "-f", "bv*+ba/b",
             "--merge-output-format", "mkv",
             "-o", raw_base, url
         ]
-        cmd2 = [
-            YT_DLP_PATH,
-            "--ffmpeg-location", os.path.dirname(FFMPEG_PATH),
-            "-f", "best",
-            "--merge-output-format", "mkv",
-            "-o", raw_base, url
-        ]
-        if not run_command(cmd1, console_text) and not run_command(cmd2, console_text):
+        if not run_command(dl_cmd, console_text):
             raise Exception("yt-dlp download failed.")
 
-        # pick up the largest raw file
+        # pick up the raw file (may have extension like .mkv or no extension at all)
         candidates = glob.glob(raw_base + ".*")
+        if os.path.isfile(raw_base):
+            candidates.append(raw_base)
         if not candidates:
             raise Exception("No raw file found.")
         raw_input = max(candidates, key=lambda f: os.path.getsize(f))
@@ -184,16 +204,15 @@ def download_and_convert(url, filename):
         # build scale filter with even width
         res = resolution_var.get() if not discord_var.get() else "720p"
         if res == "Original":
-            scale = "scale=iw:ih:flags=lanczos"
+            scale = "scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=lanczos"
         elif res == "4K":
             scale = "scale=3840:2160:flags=lanczos"
         else:
             h = int(res.replace("p", ""))
-            w = int(h * 16/9)
-            w = (w // 2) * 2            # force even width
-            scale = f"scale={w}:{h}:flags=lanczos"
+            # preserve source aspect ratio, force even dimensions
+            scale = f"scale=-2:{h}:flags=lanczos"
 
-        crf = "28" if discord_var.get() else str(quality_var.get())
+        crf = "28" if discord_var.get() else str(int(quality_var.get()))
         ab  = "96k" if discord_var.get() else "128k"
 
         ffmpeg_cmd = [
