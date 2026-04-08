@@ -15,26 +15,27 @@ Designed to make downloading and converting videos simple, fast, and Discord-fri
 That's it. The batch file installs yt-dlp, FFmpeg, Deno, and configures everything automatically.
 
 ---
-[Release v1.8](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.8)
+[Release v1.8](https://github.com/slowchu/ytdlp-gui-to-mp4/releases/tag/v1.9)
 
-Fixed:
-- Fixed "No raw file found" error when downloading videos with pre-merged formats
-- Fixed Videos folder detection on Windows (was silently failing since v1.0)
-- Fixed CRF value being passed as a float which some FFmpeg builds reject
-- Fixed scale filter assuming 16:9 aspect ratio — now preserves source aspect ratio
+New Features:
 
-Changed:
-- Replaced two-command download fallback with single command using yt-dlp's recommended format string (`bv*+ba/b`)
-- Added `--extractor-args "youtube:player_client=web"` to avoid iOS client 403 errors
-- **install-tools.bat now installs [Deno](https://deno.com)** (required JavaScript runtime for YouTube downloads)
-- **install-tools.bat now creates yt-dlp config** with `--remote-components ejs:github` for automatic challenge solver script downloads
+Extreme Optimized mode — new toggle that uses the veryslow encoder preset and 64kbps audio for maximum compression at any resolution/CRF. Can be combined with Discord Optimized for the smallest possible Discord-friendly files. Encoding will take significantly longer.
+Encoder Tuning selector — choose between None, Film, and Animation tuning with descriptions visible at all times:
+
+Film: preserves grain and detail in live-action video, may increase file size
+Animation: optimized for cartoons and anime with flat color areas, often reduces file size
+
+
+-movflags +faststart added to all outputs — Discord can now preview videos before they fully download
+Improved file size estimator — now fetches the source video's actual filesize and bitrate from yt-dlp instead of using a fixed bitrate table, producing significantly more accurate estimates based on actual content complexity
 
 ---
 
 Run install-tools.bat as an administrator, extract files from the zip provided to anywhere, launch yt-dlp gui.exe.
 
 
-![image](https://github.com/user-attachments/assets/9a8b20f4-6760-40a7-ab39-f55a788abddd)
+<img width="933" height="937" alt="image" src="https://github.com/user-attachments/assets/d3caef29-b5cc-4476-994c-e755a967f3b3" />
+
 
 
 ## ✅ Features
