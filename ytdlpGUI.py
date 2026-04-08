@@ -76,6 +76,43 @@ base_bitrate_dict = {
 }
 reference_quality = 23
 
+# Tooltip descriptions for tuning options
+TUNE_DESCRIPTIONS = {
+    "None (Default)": "No special tuning \u2014 works well for most content.",
+    "Film": "Optimized for live-action video. Preserves grain and detail, but may increase file size.",
+    "Animation": "Optimized for cartoons and anime. Boosts color fidelity on flat areas, often reduces file size.",
+}
+
+class ToolTip:
+    """Simple hover tooltip for any widget."""
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tipwindow = None
+        widget.bind("<Enter>", self.show)
+        widget.bind("<Leave>", self.hide)
+
+    def show(self, event=None):
+        if self.tipwindow:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        self.tipwindow = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(tw, text=self.text, justify='left',
+                         background="#ffffe0", relief='solid', borderwidth=1,
+                         font=("Segoe UI", 9))
+        label.pack(ipadx=4, ipady=2)
+
+    def hide(self, event=None):
+        if self.tipwindow:
+            self.tipwindow.destroy()
+            self.tipwindow = None
+
+    def update_text(self, text):
+        self.text = text
+
 def run_command(cmd, out_widget=None):
     """
     Always capture stdout/stderr, but only write it into out_widget
@@ -116,17 +153,37 @@ def run_command(cmd, out_widget=None):
 
     return proc.returncode == 0
 
-def fetch_video_duration(url):
+def fetch_video_info(url):
+    """Fetch duration, source video bitrate, source height, and filesize from yt-dlp."""
     try:
+        # Get info for best video and best audio separately
         result = subprocess.run(
             [YT_DLP_PATH, "--ffmpeg-location", os.path.dirname(FFMPEG_PATH),
-             "--print", "duration", url],
+             "--print", "%(duration)s|%(filesize,filesize_approx)s|%(vbr,tbr)s|%(height)s",
+             "-f", "bv*+ba/b", url],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, creationflags=CREATE_NO_WINDOW
         )
-        return float(result.stdout.strip())
+        # With bv*+ba/b, yt-dlp may print two lines (video, audio) or one (pre-merged)
+        lines = [l for l in result.stdout.strip().split("\n") if l.strip()]
+        if not lines:
+            return 0, 0, 0, 0
+
+        parts = lines[0].split("|")
+        duration = float(parts[0]) if parts[0] and parts[0] != "NA" else 0
+        filesize = float(parts[1]) if len(parts) > 1 and parts[1] and parts[1] != "NA" else 0
+        vbr = float(parts[2]) if len(parts) > 2 and parts[2] and parts[2] != "NA" else 0
+        src_height = int(float(parts[3])) if len(parts) > 3 and parts[3] and parts[3] != "NA" else 0
+
+        # If there's a second line (audio), add its filesize
+        if len(lines) > 1:
+            audio_parts = lines[1].split("|")
+            audio_size = float(audio_parts[1]) if len(audio_parts) > 1 and audio_parts[1] and audio_parts[1] != "NA" else 0
+            filesize += audio_size
+
+        return duration, vbr, src_height, filesize
     except:
-        return 0
+        return 0, 0, 0, 0
 
 def update_estimated_size():
     url = url_entry.get().strip()
@@ -134,27 +191,84 @@ def update_estimated_size():
         estimated_label.config(text="Estimated Output Size: N/A")
         return
 
-    duration = fetch_video_duration(url)
+    estimated_label.config(text="Estimating...")
+
+    duration, src_video_kbps, src_height, src_filesize = fetch_video_info(url)
     if duration <= 0:
         estimated_label.config(text="Estimated Output Size: Unable to determine duration")
         return
 
-    res = resolution_var.get() if not discord_var.get() else "720p"
-    base = base_bitrate_dict.get(res, 1500)
-    crf  = 28 if discord_var.get() else quality_var.get()
+    is_discord = discord_var.get()
+    is_extreme = extreme_var.get()
 
-    multiplier = reference_quality / crf
-    fudge = 1 - ((crf - 18) / 12) * 0.028
-    fudge = max(0.7, min(fudge, 1.0))
+    res = "720p" if is_discord else resolution_var.get()
+    crf = 28 if is_discord else quality_var.get()
 
-    vid_br = base * multiplier * fudge
-    aud_br = 96 if discord_var.get() else 128
-    total = vid_br + aud_br
+    # Determine target height
+    height_map = {"Original": src_height, "480p": 480, "720p": 720,
+                  "1080p": 1080, "1440p": 1440, "4K": 2160}
+    target_height = height_map.get(res, 720)
+
+    # Audio size estimate (constant, independent of video)
+    aud_kbps = 64 if is_extreme else (96 if is_discord else 128)
+    audio_size_mb = (duration * aud_kbps) / 8000.0
+
+    if src_filesize > 0 and src_height > 0:
+        # Use source filesize as the base — most reliable anchor
+        src_size_mb = src_filesize / (1024 * 1024)
+
+        # Subtract estimated audio from source to isolate video portion
+        src_audio_mb = (duration * 128) / 8000.0
+        src_video_mb = max(src_size_mb - src_audio_mb, src_size_mb * 0.8)
+
+        # Scale by resolution change (pixel area ratio)
+        if target_height < src_height:
+            res_ratio = (target_height / src_height) ** 1.5  # empirical, not pure area
+        else:
+            res_ratio = 1.0
+
+        # CRF scaling: YouTube sources are roughly CRF 22-24 equivalent
+        # Re-encoding at the same CRF produces ~same size (slight overhead)
+        # Each +6 CRF roughly halves bitrate from there
+        effective_src_crf = 23
+        crf_diff = crf - effective_src_crf
+        if crf_diff > 0:
+            crf_ratio = 2 ** (-crf_diff / 6)
+        else:
+            crf_ratio = 2 ** (-crf_diff / 6)
+
+        video_size_mb = src_video_mb * res_ratio * crf_ratio
+
+    elif src_video_kbps > 0 and src_height > 0:
+        # Fallback: use reported bitrate if filesize wasn't available
+        if target_height < src_height:
+            res_ratio = (target_height / src_height) ** 1.5
+        else:
+            res_ratio = 1.0
+
+        effective_src_crf = 23
+        crf_diff = crf - effective_src_crf
+        crf_ratio = 2 ** (-crf_diff / 6)
+
+        vid_br = src_video_kbps * res_ratio * crf_ratio
+        video_size_mb = (duration * vid_br) / 8000.0
+    else:
+        # Last resort fallback: fixed bitrate table
+        base = base_bitrate_dict.get(res, 1500)
+        multiplier = reference_quality / crf
+        fudge = max(0.7, min(1.0, 1 - ((crf - 18) / 12) * 0.028))
+        vid_br = base * multiplier * fudge
+        video_size_mb = (duration * vid_br) / 8000.0
+
     if static_var.get():
-        total *= 0.20
+        video_size_mb *= 0.20
 
-    size_mb = (duration * total) / 8000.0
-    low, high = size_mb * 0.95, size_mb * 1.25
+    # Extreme mode uses veryslow which is ~10% more efficient
+    if is_extreme:
+        video_size_mb *= 0.90
+
+    total_mb = video_size_mb + audio_size_mb
+    low, high = total_mb * 0.85, total_mb * 1.15
     estimated_label.config(text=f"Estimated Output Size: {low:.1f} MB - {high:.1f} MB")
 
 def start_estimation_thread():
@@ -184,7 +298,6 @@ def download_and_convert(url, filename):
         dl_cmd = [
             YT_DLP_PATH,
             "--ffmpeg-location", os.path.dirname(FFMPEG_PATH),
-            "--extractor-args", "youtube:player_client=web",
             "-f", "bv*+ba/b",
             "--merge-output-format", "mkv",
             "-o", raw_base, url
@@ -201,28 +314,50 @@ def download_and_convert(url, filename):
         raw_input = max(candidates, key=lambda f: os.path.getsize(f))
 
         status_label.config(text="Converting...")
-        # build scale filter with even width
-        res = resolution_var.get() if not discord_var.get() else "720p"
+
+        # Determine settings based on mode
+        is_discord = discord_var.get()
+        is_extreme = extreme_var.get()
+
+        # Resolution & CRF: Discord locks these, otherwise user controls
+        res = "720p" if is_discord else resolution_var.get()
+        crf = "28" if is_discord else str(int(quality_var.get()))
+
+        # Audio: Extreme overrides to 64k, else Discord uses 96k, else 128k
+        ab = "64k" if is_extreme else ("96k" if is_discord else "128k")
+
+        # Preset: Extreme uses veryslow, otherwise slow
+        preset = "veryslow" if is_extreme else "slow"
+
+        # build scale filter
         if res == "Original":
             scale = "scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=lanczos"
         elif res == "4K":
             scale = "scale=3840:2160:flags=lanczos"
         else:
             h = int(res.replace("p", ""))
-            # preserve source aspect ratio, force even dimensions
             scale = f"scale=-2:{h}:flags=lanczos"
 
-        crf = "28" if discord_var.get() else str(int(quality_var.get()))
-        ab  = "96k" if discord_var.get() else "128k"
+        # build tune argument
+        tune_selection = tune_var.get()
+        tune_map = {"None (Default)": None, "Film": "film", "Animation": "animation"}
+        tune_value = tune_map.get(tune_selection)
 
         ffmpeg_cmd = [
             FFMPEG_PATH,
             "-y", "-i", raw_input,
-            "-c:v", "libx264", "-crf", crf, "-preset", "slow",
+            "-c:v", "libx264", "-crf", crf, "-preset", preset,
             "-vf", scale,
             "-c:a", "aac", "-b:a", ab,
+            "-movflags", "+faststart",
             final_path
         ]
+
+        # insert -tune before the output path if a tune is selected
+        if tune_value:
+            ffmpeg_cmd.insert(-1, "-tune")
+            ffmpeg_cmd.insert(-1, tune_value)
+
         if not run_command(ffmpeg_cmd, console_text):
             raise Exception("FFmpeg conversion failed.")
 
@@ -262,6 +397,9 @@ def on_discord_toggle(*_):
         quality_slider.config(state='normal')
     start_estimation_thread()
 
+def on_extreme_toggle(*_):
+    start_estimation_thread()
+
 def on_showprogress_toggle(*_):
     if showprogress_var.get():
         console_frame.pack(fill='both', expand=True, padx=10, pady=(5,10))
@@ -293,6 +431,19 @@ resolution_menu = tk.OptionMenu(root, resolution_var, *resolution_options,
                                 command=lambda _: start_estimation_thread())
 resolution_menu.pack(pady=(0,10))
 
+# Tune selection as radio buttons with inline descriptions
+tune_outer_frame = tk.LabelFrame(root, text="Encoder Tuning", padx=10, pady=5)
+tune_outer_frame.pack(pady=(0,10), padx=10, fill='x')
+tune_var = tk.StringVar(root); tune_var.set("None (Default)")
+
+for option, desc in TUNE_DESCRIPTIONS.items():
+    frame = tk.Frame(tune_outer_frame)
+    frame.pack(anchor='w', pady=1)
+    tk.Radiobutton(frame, text=option, variable=tune_var,
+                   value=option).pack(side='left')
+    tk.Label(frame, text=f"— {desc}", font=("Segoe UI", 8),
+             fg="gray").pack(side='left', padx=(2,0))
+
 tk.Button(root, text="Estimate File Size", command=start_estimation_thread).pack()
 estimated_label = tk.Label(root, text="Estimated Output Size: N/A")
 estimated_label.pack(pady=(5,10))
@@ -306,7 +457,7 @@ tk.Checkbutton(root, text="Show progress",
                variable=showprogress_var).pack(pady=(5,10))
 showprogress_var.trace_add('write', on_showprogress_toggle)
 
-tk.Label(root, text="Video Quality Scale: (Low–High Quality)").pack()
+tk.Label(root, text="Video Quality Scale: (Low\u2013High Quality)").pack()
 slider_frame = tk.Frame(root); slider_frame.pack(fill='x', padx=10)
 tk.Label(slider_frame, text="(Higher=Smaller File)").pack(side='left', padx=(5,5))
 quality_var = tk.DoubleVar(value=23)
@@ -320,9 +471,18 @@ quality_value_label.pack(side='left', padx=(5,5))
 tk.Label(slider_frame, text="(Lower=Larger File)").pack(side='left')
 
 discord_var = tk.BooleanVar()
-tk.Checkbutton(root, text="Discord Optimized (CRF28,720p max,96k audio)",
-               variable=discord_var).pack(pady=(5,10))
+discord_cb = tk.Checkbutton(root, text="Discord Optimized (CRF28, 720p, 96k audio)",
+                            variable=discord_var)
+discord_cb.pack(pady=(5,0))
 discord_var.trace_add('write', on_discord_toggle)
+ToolTip(discord_cb, "Locks resolution to 720p and CRF to 28.\nGood starting point for Discord file limits.")
+
+extreme_var = tk.BooleanVar()
+extreme_cb = tk.Checkbutton(root, text="Extreme Optimized (veryslow preset, 64k audio)",
+                            variable=extreme_var)
+extreme_cb.pack(pady=(0,10))
+extreme_var.trace_add('write', on_extreme_toggle)
+ToolTip(extreme_cb, "Uses the veryslow encoder preset and 64kbps audio\nfor maximum compression at any resolution/quality.\nCan be combined with Discord Optimized.\nEncoding will take significantly longer.")
 
 tk.Button(root, text="Download & Convert", command=start_download).pack(pady=(5,10))
 progress_bar = ttk.Progressbar(root, mode='indeterminate', length=400)
